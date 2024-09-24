@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
-import { handleToPrint } from "../../constant/Utils";
+import { handleDownloadPdf, handleToPrint } from "../../constant/Utils";
 import { themeColor, emailRegex } from "../../constant/const";
 import Loader from "../../primitives/Loader";
 import ModalUi from "../../primitives/ModalUi";
@@ -15,8 +15,7 @@ function EmailComponent({
   sender,
   setIsAlert,
   extUserId,
-  activeMailAdapter,
-  setIsDownloadModal
+  activeMailAdapter
 }) {
   const { t } = useTranslation();
   const [emailList, setEmailList] = useState([]);
@@ -30,6 +29,28 @@ function EmailComponent({
     const pdfName = pdfDetails[0]?.Name;
     setIsLoading(true);
     let sendMail;
+
+    const docId = !pdfDetails?.[0]?.IsEnableOTP
+      ? pdfDetails?.[0]?.objectId
+      : "";
+    let presignedUrl = pdfUrl;
+    try {
+      // const url = await Parse.Cloud.run("getsignedurl", { url: pdfUrl });
+      const axiosRes = await axios.post(
+        `${localStorage.getItem("baseUrl")}/functions/getsignedurl`,
+        { url: pdfUrl, docId: docId },
+        {
+          headers: {
+            "content-type": "Application/json",
+            "X-Parse-Application-Id": localStorage.getItem("parseAppId"),
+            "X-Parse-Session-Token": localStorage.getItem("accesstoken")
+          }
+        }
+      );
+      presignedUrl = axiosRes.data.result;
+    } catch (err) {
+      console.log("err in getsignedurl", err);
+    }
     for (let i = 0; i < emailList.length; i++) {
       try {
         const imgPng =
@@ -47,7 +68,7 @@ function EmailComponent({
           mailProvider: activeMailAdapter,
           extUserId: extUserId,
           pdfName: pdfName,
-          url: pdfUrl,
+          url: presignedUrl,
           recipient: emailList[i],
           subject: `${sender.name} has signed the doc - ${pdfName}`,
           from: sender.email,
@@ -130,11 +151,6 @@ function EmailComponent({
       }
     }
   };
-  const handleClose = () => {
-    setIsEmail(false);
-    setEmailValue("");
-    setEmailList([]);
-  };
   return (
     <div>
       {/* isEmail */}
@@ -171,10 +187,9 @@ function EmailComponent({
               )}
               <button
                 className="op-btn op-btn-primary op-btn-sm text-[15px] ml-2"
-                onClick={() => {
-                  handleClose();
-                  setIsDownloadModal(true);
-                }}
+                onClick={() =>
+                  handleDownloadPdf(pdfDetails, pdfUrl, setIsDownloading)
+                }
               >
                 <i className="fa-light fa-download" aria-hidden="true"></i>
                 {t("download")}
@@ -270,7 +285,11 @@ function EmailComponent({
             <button
               type="button"
               className="op-btn op-btn-ghost ml-2"
-              onClick={() => handleClose()}
+              onClick={() => {
+                setIsEmail(false);
+                setEmailValue("");
+                setEmailList([]);
+              }}
             >
               {t("close")}
             </button>
